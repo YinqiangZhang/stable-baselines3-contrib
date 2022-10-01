@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 import gym
 import numpy as np
 import torch as th
+import torch_geometric as thg
 from gym import spaces
 from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
@@ -15,10 +16,10 @@ from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedul
 from stable_baselines3.common.utils import explained_variance, get_schedule_fn, obs_as_tensor, safe_mean
 from stable_baselines3.common.vec_env import VecEnv
 
-from sb3_contrib.common.recurrent.buffers import RecurrentDictRolloutBuffer, RecurrentRolloutBuffer
+from sb3_contrib.common.recurrent.buffers import RecurrentDictRolloutBuffer, RecurrentRolloutBuffer, GraphRecurrentRolloutBuffer
 from sb3_contrib.common.recurrent.policies import RecurrentActorCriticPolicy
 from sb3_contrib.common.recurrent.type_aliases import RNNStates
-from sb3_contrib.ppo_recurrent.policies import CnnLstmPolicy, MlpLstmPolicy, MultiInputLstmPolicy
+from sb3_contrib.ppo_recurrent.policies import CnnLstmPolicy, MlpLstmPolicy, MultiInputLstmPolicy, GNNLstmPolicy
 
 
 class RecurrentPPO(OnPolicyAlgorithm):
@@ -70,6 +71,7 @@ class RecurrentPPO(OnPolicyAlgorithm):
         "MlpLstmPolicy": MlpLstmPolicy,
         "CnnLstmPolicy": CnnLstmPolicy,
         "MultiInputLstmPolicy": MultiInputLstmPolicy,
+        "GNNLstmPolicy": GNNLstmPolicy,
     }
 
     def __init__(
@@ -141,9 +143,18 @@ class RecurrentPPO(OnPolicyAlgorithm):
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
 
-        buffer_cls = (
-            RecurrentDictRolloutBuffer if isinstance(self.observation_space, gym.spaces.Dict) else RecurrentRolloutBuffer
-        )
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            buffer_cls = (
+                RecurrentDictRolloutBuffer
+            )
+        elif isinstance(self.observation_space, gym.spaces.Graph):
+            buffer_cls = (
+                GraphRecurrentRolloutBuffer
+            )
+        else:
+            buffer_cls = (
+                RecurrentRolloutBuffer
+            )
 
         self.policy = self.policy_class(
             self.observation_space,
@@ -277,7 +288,11 @@ class RecurrentPPO(OnPolicyAlgorithm):
 
             with th.no_grad():
                 # Convert to pytorch tensor or to TensorDict
-                obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                if isinstance(self._last_obs[0], gym.spaces.GraphInstance):
+                    obs_tensor = self.policy.obs_to_tensor(self._last_obs[0])[0]
+                    obs_tensor = obs_tensor.to(self.device)
+                else:
+                    obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 episode_starts = th.tensor(self._last_episode_starts).float().to(self.device)
                 actions, values, log_probs, lstm_states = self.policy.forward(obs_tensor, lstm_states, episode_starts)
 
@@ -341,7 +356,12 @@ class RecurrentPPO(OnPolicyAlgorithm):
         with th.no_grad():
             # Compute value for the last timestep
             episode_starts = th.tensor(dones).float().to(self.device)
-            values = self.policy.predict_values(obs_as_tensor(new_obs, self.device), lstm_states.vf, episode_starts)
+            if isinstance(new_obs[0], gym.spaces.GraphInstance):
+                obs_tensor = self.policy.obs_to_tensor(self._last_obs[0])[0]
+                obs_tensor = obs_tensor.to(self.device)
+            else:
+                obs_tensor = obs_as_tensor(new_obs, self.device)
+            values = self.policy.predict_values(obs_tensor, lstm_states.vf, episode_starts)
 
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 

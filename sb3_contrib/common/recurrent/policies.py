@@ -3,9 +3,11 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import gym
 import numpy as np
 import torch as th
+import torch_geometric as thg
 from stable_baselines3.common.distributions import Distribution
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import (
+    GraphFeaturesExtractor,
     BaseFeaturesExtractor,
     CombinedExtractor,
     FlattenExtractor,
@@ -481,7 +483,7 @@ class RecurrentActorCriticCnnPolicy(RecurrentActorCriticPolicy):
         normalize_images: bool = True,
         optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
-        lstm_hidden_size: int = 256,
+        lstm_hidden_size: int = 128,
         n_lstm_layers: int = 1,
         shared_lstm: bool = False,
         enable_critic_lstm: bool = True,
@@ -603,3 +605,73 @@ class RecurrentMultiInputActorCriticPolicy(RecurrentActorCriticPolicy):
             enable_critic_lstm,
             lstm_kwargs,
         )
+
+class RecurrentGNNActorCriticPolicy(RecurrentActorCriticPolicy):
+    def __init__(
+        self,
+        observation_space: gym.spaces.Graph,
+        action_space: gym.spaces.Space,
+        lr_schedule: Schedule,
+        net_arch: Optional[List[Union[int, Dict[str, List[int]]]]] = None,
+        activation_fn: Type[nn.Module] = nn.Tanh,
+        ortho_init: bool = True,
+        use_sde: bool = False,
+        log_std_init: float = 0.0,
+        full_std: bool = True,
+        sde_net_arch: Optional[List[int]] = None,
+        use_expln: bool = False,
+        squash_output: bool = False,
+        features_extractor_class: Type[BaseFeaturesExtractor] = GraphFeaturesExtractor,
+        features_extractor_kwargs: Optional[Dict[str, Any]] = None,
+        normalize_images: bool = True,
+        optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        lstm_hidden_size: int = 256,
+        n_lstm_layers: int = 1,
+        shared_lstm: bool = False,
+        enable_critic_lstm: bool = True,
+        lstm_kwargs: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            net_arch,
+            activation_fn,
+            ortho_init,
+            use_sde,
+            log_std_init,
+            full_std,
+            sde_net_arch,
+            use_expln,
+            squash_output,
+            features_extractor_class,
+            features_extractor_kwargs,
+            normalize_images,
+            optimizer_class,
+            optimizer_kwargs,
+            lstm_hidden_size,
+            n_lstm_layers,
+            shared_lstm,
+            enable_critic_lstm,
+            lstm_kwargs,
+        )
+    
+    def obs_to_tensor(self, observation: gym.spaces.GraphInstance):
+        if isinstance(observation, list):
+            vectorized_env = True
+        else:
+            vectorized_env = False
+        if vectorized_env:
+            torch_obs = list()
+            for obs in observation:
+                x = th.tensor(obs.nodes).float()
+                edge_index = th.tensor(obs.edge_links, dtype=th.long).t().contiguous().view(2, -1)
+                torch_obs.append(thg.data.Data(x=x, edge_index=edge_index))
+            if len(torch_obs) == 1:
+                torch_obs = torch_obs[0]
+        else:
+            x = th.tensor(observation.nodes).float()
+            edge_index = th.tensor(observation.edge_links, dtype=th.long).t().contiguous().view(2, -1)
+            torch_obs = thg.data.Data(x=x, edge_index=edge_index)
+        return torch_obs, vectorized_env
