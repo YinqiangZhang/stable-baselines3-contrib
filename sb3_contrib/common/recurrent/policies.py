@@ -381,11 +381,14 @@ class RecurrentActorCriticPolicy(ActorCriticPolicy):
         self.set_training_mode(False)
 
         observation, vectorized_env = self.obs_to_tensor(observation)
-
+        observation.to(self.device)
         if isinstance(observation, dict):
             n_envs = observation[list(observation.keys())[0]].shape[0]
         else:
-            n_envs = observation.shape[0]
+            if vectorized_env is not True:
+                n_envs = 1
+            else:
+                n_envs = observation.shape[0]
         # state : (n_layers, n_envs, dim)
         if state is None:
             # Initialize hidden states to zeros
