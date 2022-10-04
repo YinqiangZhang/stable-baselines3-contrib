@@ -438,10 +438,10 @@ class GraphRecurrentRolloutBuffer(RecurrentRolloutBuffer):
                 end_idx = data_segments[idx+1]
                 obs_num = 0
                 for padded_idx in range(start_idx, end_idx):
-                    selected_observations.append(self.observations[padded_idx])
+                    selected_observations.append(self.observations[batch_inds[padded_idx]]) 
                     obs_num += 1
-                feature_shape = self.observations[end_idx-1].nodes.shape
-                edge_links = self.observations[end_idx-1].edge_links
+                feature_shape = self.observations[batch_inds[end_idx-1]].nodes.shape
+                edge_links = self.observations[batch_inds[end_idx-1]].edge_links
                 while obs_num < max_length:
                     selected_observations.append(thg.data.Data(nodes=np.zeros(feature_shape), edge_links=edge_links))
                     obs_num += 1

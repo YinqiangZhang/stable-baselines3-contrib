@@ -125,6 +125,7 @@ class RecurrentPPO(OnPolicyAlgorithm):
                 spaces.Discrete,
                 spaces.MultiDiscrete,
                 spaces.MultiBinary,
+                spaces.Graph
             ),
         )
 
